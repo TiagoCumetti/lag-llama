@@ -1,3 +1,17 @@
+# Copyright 2024 Arjun Ashok
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import math
 from dataclasses import dataclass
 from typing import List, Optional
@@ -243,7 +257,7 @@ class CausalSelfAttention(nn.Module):
 
         if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
             raise ValueError(
-                "`rope_scaling` must be a dictionary with with two fields, `name` and `factor`, "
+                "`rope_scaling` must be a dictionary with with two fields, `type` and `factor`, "
                 f"got {self.rope_scaling}"
             )
         rope_scaling_type = self.rope_scaling.get("type", None)
@@ -254,7 +268,7 @@ class CausalSelfAttention(nn.Module):
             "nope",
         ]:
             raise ValueError(
-                f"`rope_scaling`'s name field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
+                f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
             )
         if rope_scaling_type in ["linear", "dynamic"]:
             if (
