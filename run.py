@@ -498,7 +498,7 @@ def train(args):
                 print("Trying batch size:", batch_size)
                 estimator.batch_size = batch_size
                 predictor = estimator.create_predictor(
-                    estimator.create_transformation(),
+                    estimator.create_transformation(skip=False),
                     estimator.create_lightning_module(),
                 )
                 # Make evaluations

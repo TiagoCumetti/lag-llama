@@ -42,12 +42,15 @@ from gluonts.transform import (
     TestSplitSampler,
     Transformation,
     ValidationSplitSampler,
+    Identity
 )
 
 from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
     ImplicitQuantileNetworkOutput,
 )
 from lag_llama.gluon.lightning_module import LagLlamaLightningModule
+
+from lag_llama.gluon.gluontsTranspose import Transpose
 
 PREDICTION_INPUT_NAMES = [
     "past_target",
@@ -252,7 +255,10 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             "cardinality": [len(cats) for cats in stats.feat_static_cat],
         }
 
-    def create_transformation(self) -> Transformation:
+    def create_transformation(self, skip=True) -> Transformation:
+        if skip:
+            return Identity()
+        
         if self.time_feat:
             return Chain(
                 [
@@ -271,6 +277,54 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 ]
             )
         else:
+            return Chain(
+                [
+                    AddObservedValuesIndicator(
+                        target_field=FieldName.TARGET,
+                        output_field=FieldName.OBSERVED_VALUES,
+                        imputation_method=DummyValueImputation(0.0),
+                    ),
+                ]
+            )
+    
+    def create_real_transformation(self) -> Transformation:
+        if self.time_feat:
+            return Chain(
+                [
+                    AddTimeFeatures(
+                        start_field=FieldName.START,
+                        target_field=f"past_{FieldName.TARGET}",
+                        output_field=f"past_{FieldName.FEAT_TIME}",
+                        time_features=time_features_from_frequency_str("S"),
+                        pred_length=self.prediction_length,
+                    ),
+                    Transpose(
+                        field=f"past_{FieldName.FEAT_TIME}",
+                    ),
+                    AddTimeFeatures(
+                        start_field=FieldName.START,
+                        target_field=f"future_{FieldName.TARGET}",
+                        output_field=f"future_{FieldName.FEAT_TIME}",
+                        time_features=time_features_from_frequency_str("S"),
+                        pred_length=self.prediction_length,
+                    ),
+                    Transpose(
+                        field=f"future_{FieldName.FEAT_TIME}",
+                    ),
+                    AddObservedValuesIndicator(
+                        target_field=f"past_{FieldName.TARGET}",
+                        output_field=f"past_{FieldName.OBSERVED_VALUES}",
+                        imputation_method=DummyValueImputation(0.0),
+                    ),
+                    AddObservedValuesIndicator(
+                        target_field=f"future_{FieldName.TARGET}",
+                        output_field=f"future_{FieldName.OBSERVED_VALUES}",
+                        imputation_method=DummyValueImputation(0.0),
+                    ),
+                ]
+            )
+        else:
+            raise NotImplementedError()
             return Chain(
                 [
                     AddObservedValuesIndicator(
@@ -386,6 +440,12 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             "test": TestSplitSampler(),
         }[mode]
 
+        if mode != "test":
+            time_series_fields = []
+        elif self.time_feat:
+            time_series_fields = [FieldName.FEAT_TIME, FieldName.OBSERVED_VALUES]
+        else:
+            time_series_fields = [FieldName.OBSERVED_VALUES]
         return InstanceSplitter(
             target_field=FieldName.TARGET,
             is_pad_field=FieldName.IS_PAD,
@@ -394,9 +454,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             instance_sampler=instance_sampler,
             past_length=self.context_length + max(self.lags_seq),
             future_length=self.prediction_length,
-            time_series_fields=[FieldName.FEAT_TIME, FieldName.OBSERVED_VALUES]
-            if self.time_feat
-            else [FieldName.OBSERVED_VALUES],
+            time_series_fields=time_series_fields,
             dummy_value=self.distr_output.value_in_support,
         )
 
@@ -411,6 +469,9 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         instances = self._create_instance_splitter(module, "training").apply(
             data, is_train=True
         )
+        
+        instances = self.create_real_transformation()(instances, is_train=True)
+
         if self.time_feat:
             return as_stacked_batches(
                 instances,
@@ -441,6 +502,9 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         instances = self._create_instance_splitter(module, "validation").apply(
             data, is_train=True
         )
+
+        instances = self.create_real_transformation()(instances, is_train=True)
+
         if self.time_feat:
             return as_stacked_batches(
                 instances,
