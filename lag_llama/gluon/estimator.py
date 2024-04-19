@@ -14,6 +14,7 @@
 
 from typing import Any, Dict, Iterable, Optional
 
+import time
 import pytorch_lightning as pl
 import torch
 
@@ -407,6 +408,10 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         shuffle_buffer_length: Optional[int] = None,
         **kwargs,
     ) -> Iterable:
+        print("Transforming data for training")
+        start = time.time()
+        data = list(data)
+        print(f"Data transform took {time.time() - start} seconds")
         data = Cyclic(data).stream()
         instances = self._create_instance_splitter(module, "training").apply(
             data, is_train=True
@@ -439,6 +444,12 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         module: LagLlamaLightningModule,
         **kwargs,
     ) -> Iterable:
+        
+        print("Transforming data for validation")
+        start = time.time()
+        data = list(data)
+        print(f"Data transform took {time.time() - start} seconds")
+        data = list(data)
         instances = self._create_instance_splitter(module, "validation").apply(
             data, is_train=True
         )
